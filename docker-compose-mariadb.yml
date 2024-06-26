@@ -1,0 +1,74 @@
+version: '3.7'
+
+services:
+
+  mariadb:
+    image: mariadb:latest
+    ports:
+      - 3306
+    volumes:
+      - mariadb_data:/var/lib/mysql
+    networks:
+      - backend-net
+    environment:
+      MARIADB_USER: admin
+      MARIADB_PASSWORD: admin123
+      MARIADB_ROOT_PASSWORD: root!@#mariadb
+      #MYSQL_DATABASE: database-sample
+    deploy:
+      mode: replicated
+      replicas: 1
+      labels:
+        - traefik.enable=true
+        - traefik.docker.network=backend-net
+        ### Traefik-v2
+        - traefik.tcp.routers.mariadb-tcp.rule=HostSNI(`*`)
+        - traefik.tcp.routers.mariadb-tcp.entrypoints=mariadb
+        - traefik.tcp.routers.mariadb-tcp.service=mariadb-proxy
+        - traefik.tcp.services.mariadb-proxy.loadbalancer.server.port=3306
+      
+  mariadb-frontend:
+    image: phpmyadmin:latest
+    depends_on:
+      - mariadb
+    ports:
+      - 80
+    networks:
+      - frontend-net
+      - backend-net
+    environment:
+      - PMA_ARBITRARY=1
+      - PMA_HOST=db
+      - PMA_PORT=3306
+      - MYSQL_ROOT_PASSWORD=root!@#mariadb
+    logging:
+      options:
+        max-size: "10m"
+        max-file: "3"
+    deploy:
+      mode: replicated
+      replicas: 1
+      labels:
+        
+        ### Traefik-v1 (http)
+        - traefik.enable=true
+        - traefik.backend=mariadb
+        - traefik.docker.network=frontend-net
+        - traefik.frontend.rule=Host:${DNS}
+        - traefik.port=80
+
+        ### Traefik-v2 (https)
+        - traefik.http.routers.mariadb-https.rule=Host(`${DNS?Variable not set}`)
+        - traefik.http.routers.mariadb-https.entrypoints=https
+        - traefik.http.routers.mariadb-https.tls=true
+        - traefik.http.services.mariadb.loadbalancer.server.port=80
+
+volumes:
+  mariadb_data:
+  wordpress_data:
+
+networks:
+  frontend-net:
+    external: true
+  backend-net:
+    external: true

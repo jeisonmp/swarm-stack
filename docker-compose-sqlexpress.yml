@@ -1,0 +1,33 @@
+version: '3.7'
+
+services:
+
+  sqlexpress:
+    image: mcr.microsoft.com/mssql/server:2019-latest
+    volumes:
+      - sqlexpress_data:/var/opt/mssql:Z
+    networks:
+      - backend-net
+    environment:
+      SA_PASSWORD: admin@123
+      ACCEPT_EULA: "Y"
+    ports:
+      - 1433
+    deploy:
+      mode: replicated
+      replicas: 1
+      labels:
+        - traefik.enable=true
+        - traefik.docker.network=backend-net
+        ### Traefik-v2
+        - traefik.tcp.routers.sqlexpress-tcp.rule=HostSNI(`*`)
+        - traefik.tcp.routers.sqlexpress-tcp.entrypoints=sqlexpress
+        - traefik.tcp.routers.sqlexpress-tcp.service=sqlexpress-proxy
+        - traefik.tcp.services.sqlexpress-proxy.loadbalancer.server.port=1433
+
+volumes:
+  sqlexpress_data:
+
+networks:
+  backend-net:
+    external: true

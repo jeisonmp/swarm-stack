@@ -1,0 +1,69 @@
+version: '3.7'
+
+services:
+
+  ### ref: https://docs.redis.com/latest/ri/installing/configurations/
+  redis-insight: 
+    image: redislabs/redisinsight:latest
+    ports:
+      - 8001
+    networks: 
+      - frontend-net
+      - backend-net
+    volumes:
+      - redis-insight-data:/db
+    environment:
+      - RILOGLEVEL=INFO
+    deploy:
+      mode: replicated
+      replicas: 1
+      labels:
+        
+        ### Traefik-v1 (http)
+        - traefik.enable=true
+        - traefik.backend=redis-insight
+        - traefik.docker.network=frontend-net
+        - traefik.frontend.rule=Host:${DNS}
+        - traefik.port=8001
+
+        ### Traefik-v2 (https)
+        - traefik.http.routers.redis-insight-https.rule=Host(`${DNS?Variable not set}`)
+        - traefik.http.routers.redis-insight-https.entrypoints=https
+        - traefik.http.routers.redis-insight-https.tls=true
+        - traefik.http.services.redis-insight.loadbalancer.server.port=8001
+
+  ### ref: https://redis.io/docs/install/install-stack/docker/
+  ### ref:https://medium.com/@joshisoftynakul/deploying-a-redis-stack-cluster-using-docker-images-along-with-redisinsight-e3588f038a40
+  redis:
+    image: redis/redis-stack-server:latest
+    entrypoint: redis-server --maxmemory 512mb -maxmemory-policy allkeys-lru
+    ports:
+      - 6379
+    networks:
+      - backend-net
+    # volumes:
+    #   - redis-data:/data
+    logging:
+      options:
+        max-size: "10m"
+        max-file: "3"
+    deploy:
+      mode: replicated
+      replicas: 1
+      labels:
+        - traefik.enable=true
+        - traefik.docker.network=backend-net
+        ### Traefik-v2
+        - traefik.tcp.routers.redis-tcp.rule=HostSNI(`*`)
+        - traefik.tcp.routers.redis-tcp.entrypoints=redis
+        - traefik.tcp.routers.redis-tcp.service=redis-proxy
+        - traefik.tcp.services.redis-proxy.loadbalancer.server.port=6379
+
+volumes:
+  redis-insight-data:
+
+networks:
+  frontend-net:
+    external: true
+  backend-net:
+    external: true

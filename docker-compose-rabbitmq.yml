@@ -1,0 +1,46 @@
+version: "3.6"
+
+configs:
+  plugins_enabled:
+    file: ./config/rabbitmq/enabled_plugins
+  rabbitmq_config:
+    file: ./config/rabbitmq/rabbitmq.conf
+
+services:
+  rabbitmq-stream:
+    image: rabbitmq:3-management
+    environment:
+      - RABBITMQ_DEFAULT_USER=admin
+      - RABBITMQ_DEFAULT_PASS=${ADMIN_PASSWORD}
+      - RABBITMQ_ERLANG_COOKIE=IJCorTkyQdLeNSEOH29b==
+    networks:
+      - frontend-net
+    volumes:
+      - rabbitmq_data_stream:/var/lib/rabbitmq/mnesia:rw
+    configs:
+        - source: plugins_enabled
+          target: /etc/rabbitmq/enabled_plugins
+        - source: rabbitmq_config
+          target: /etc/rabbitmq/rabbitmq_config
+    deploy:
+      mode: replicated
+      replicas: 1
+      labels:
+        - traefik.enable=true
+        - traefik.docker.network=frontend-net
+        ### Traefik-v2 (ssl)
+        - traefik.http.routers.rabbitmq-stream-https.rule=Host(`${DNS?Variable not set}`)
+        - traefik.http.routers.rabbitmq-stream-https.entrypoints=https
+        - traefik.http.routers.rabbitmq-stream-https.tls=true
+        - traefik.http.services.rabbitmq-stream-https.loadbalancer.server.port=15672
+        ### Traefik-v2 (amqp)
+        - traefik.tcp.routers.rabbitmq-stream-amqp.rule=HostSNI(`*`)
+        - traefik.tcp.routers.rabbitmq-stream-amqp.entrypoints=amqp
+        - traefik.tcp.services.rabbitmq-stream-amqp.loadbalancer.server.port=5672
+
+volumes:
+  rabbitmq_data_stream:
+
+networks:
+  frontend-net:
+    external: true

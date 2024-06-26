@@ -1,0 +1,117 @@
+version: '3.7'
+
+configs:
+  traefik_config:
+    file: ./config/certificates.yaml
+  cert_dns_crt:
+    file: ./config/certs/dns.crt
+  cert_dns_key:
+    file: ./config/certs/dns.key
+
+services:
+
+  traefik-ssl:
+    image: traefik:v2.7.1
+    ports:
+      - 443:443
+      - 3306:3306
+      - 5432:5432
+      - 6379:6379
+      - 5672:5672
+      - 1433:1433
+    deploy:
+      mode: global
+      placement:
+        constraints:
+          - node.role == manager
+      labels:
+        - traefik.enable=true
+        - traefik.docker.network=router-net
+
+        ## admin-auth middleware with HTTP Basic auth
+        ## Using the environment variables USER and HASHED_PASSWORD
+        - traefik.http.middlewares.admin-auth.basicauth.users=${USER?Variable not set}:${HASHED_PASSWORD?Variable not set}
+        
+        ## traefik-https the actual router using HTTPS
+        ## Uses the environment variable DOMAIN
+        - traefik.http.routers.traefik-ssl-https.rule=Host(`${DNS?Variable not set}`)
+
+        - traefik.http.routers.traefik-ssl-https.entrypoints=https
+        - traefik.http.routers.traefik-ssl-https.tls=true
+        
+        ## Use the special Traefik service api@internal with the web UI/Dashboard
+        - traefik.http.routers.traefik-ssl-https.service=api@internal
+        - traefik.http.routers.traefik-ssl-https.middlewares=admin-auth
+        - traefik.http.services.traefik-ssl.loadbalancer.server.port=443
+        
+    configs:
+      - source: traefik_config
+        target: /configuration/certificates.yaml
+      ###
+      ### Embedded SSL certificates
+      ###
+      - source: cert_dns_crt
+        target: /certs/dns.crt
+      - source: cert_dns_key
+        target: /certs/dns.key
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      ## NFS Volume on SWARM ADM environment
+      #- /nfs-data/certificates:/certs:ro
+    command:
+      - --providers.docker
+      - --providers.docker.exposedbydefault=false
+      - --providers.docker.swarmmode
+      - --providers.file.directory=/configuration/
+      - --providers.file.watch=true
+      - --accesslog
+      - --log
+      - --api
+      - --entrypoints.https.address=:443
+      - --entrypoints.mariadb.address=:3306
+      - --entrypoints.postgress.address=:5432
+      - --entrypoints.redis.address=:6379
+      - --entrypoints.amqp.address=:5672
+      - --entrypoints.sqlexpress.address=:1433
+    networks:
+      - frontend-net
+      - backend-net
+
+  traefik:
+    image: traefik:v1.7.9
+    ports:
+      - 80:80
+    deploy:
+      mode: global
+      placement:
+        constraints:
+          - node.role == manager
+      labels:
+        - traefik.frontend.rule=Host:${DNS}
+        - traefik.enable=true
+        - traefik.port=8080
+        - traefik.docker.network=backend-net
+        - traefik.redirectorservice.frontend.entryPoints=http
+        - traefik.http.services.traefik.loadbalancer.server.port=8080
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    command: >
+      --docker
+      --docker.swarmmode
+      --docker.watch
+      --docker.exposedbydefault=false
+      --entrypoints='Name:http Address::80'
+      --logLevel=INFO
+      --accessLog
+      --api
+      --metrics
+      --metrics.prometheus
+    networks:
+      - frontend-net
+      - backend-net
+
+networks:
+  frontend-net:
+    external: true
+  backend-net:
+    external: true

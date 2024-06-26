@@ -1,0 +1,66 @@
+version: '3.7'
+       
+services:
+
+  wordpress:
+    image: wordpress:local
+    networks:
+      - frontend-net
+      - backend-net
+    ports:
+      - 80
+    volumes:
+      - wordpress_data:/var/www/html
+      # our persistent local data re routing
+      # - ./themes/yourtheme:/var/www/html/wp-content/themes/yourtheme:delegated
+      # - ./plugins:/var/www/html/wp-content/plugins
+      # - ./mu-plugins:/var/www/html/wp-content/mu-plugins
+      # - ./uploads:/var/www/html/wp-content/uploads
+      # - ./logs:/var/www/html/wp-content/logs
+      - ./config/uploads.ini:/usr/local/etc/php/conf.d/uploads.ini
+      # - ./error-logging.ini:/usr/local/etc/php/conf.d/error-logging.ini
+    environment:
+      # debug mode
+      WORDPRESS_DEBUG: 1
+      WORDPRESS_DB_HOST: ${MYSQL_HOST} # localhost:3306
+      WORDPRESS_DB_USER: ${MYSQL_USER}
+      WORDPRESS_DB_PASSWORD: ${MYSQL_PASSWORD}
+      MYSQL_DATABASE: ${MYSQL_DATABASE_NAME}
+      
+      WORDPRESS_CONFIG_EXTRA: |
+        //
+        // redis config cache for total cache
+        //
+        define( 'W3TC_CONFIG_CACHE_ENGINE', 'redis');
+        define( 'W3TC_CONFIG_CACHE_REDIS_SERVERS', 'redis.local.com.br::6379' );
+        // optional redis settings
+        define( 'W3TC_CONFIG_CACHE_REDIS_PERSISTENT', true );
+        define( 'W3TC_CONFIG_CACHE_REDIS_DBID', 0 );
+        define( 'W3TC_CONFIG_CACHE_REDIS_PASSWORD', '' );
+    deploy:
+      mode: replicated
+      replicas: 1
+      labels:
+        ### Traefik-v1 (http)
+        - traefik.enable=true
+        - traefik.backend=wordpress
+        - traefik.docker.network=frontend-net
+        - traefik.frontend.rule=Host:${DNS}
+        - traefik.port=80
+
+        ### Traefik-v2 (https)
+        #- traefik.enable=true
+        #- traefik.docker.network=router-net
+        - traefik.http.routers.wordpress-https.rule=Host(`${DNS?Variable not set}`)
+        - traefik.http.routers.wordpress-https.entrypoints=https
+        - traefik.http.routers.wordpress-https.tls=true
+        - traefik.http.services.wordpress.loadbalancer.server.port=80
+
+volumes:
+  wordpress_data:
+
+networks:
+  frontend-net:
+    external: true
+  backend-net:
+    external: true
